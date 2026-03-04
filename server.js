@@ -6,14 +6,13 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Rate limiting
+// Rate limiting (works fine on Vercel)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -43,7 +42,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { message, history } = req.body;
     if (!message || typeof message !== 'string') {
-      return res.status(400).json({ error: 'Invalid message format' });
+      return res.status(400).json({ error: 'Please type a message before sending.' });
     }
     if (message.length > 5000) {
       return res.status(400).json({ error: 'Message too long. Max 5000 characters.' });
@@ -61,14 +60,31 @@ app.post('/api/chat', async (req, res) => {
     res.json({ reply });
   } catch (error) {
     console.error('Gemini error:', error);
-    res.status(500).json({ error: 'Failed to get response from AI' });
+    
+    if (error.status === 429 || error.message?.includes('quota')) {
+      return res.status(429).json({ 
+        error: 'Our AI service is busy. Please try again in a moment.'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'I\'m having trouble responding. Please try again.'
+    });
   }
 });
 
+// Serve frontend for any other route
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;
